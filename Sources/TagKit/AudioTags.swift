@@ -37,16 +37,21 @@ public struct AudioTags: Equatable, Sendable {
     // MARK: - Init
     public init() {}
 
-    /// Reads from TagLib's property map, where a position may be `3` or `3/12`, with the total in its own field.
+    /// Reads from TagLib's property map, where a position may be `3`, `3/12` or `0/12`, with the total in its own
+    /// field. A number of 0 means there isn't one.
     init(properties: [String: [String]], cover: Data?) {
         func text(_ key: String) -> String? {
             properties[key]?.first.flatMap { $0.isEmpty ? nil : $0 }
         }
 
-        func position(_ key: String) -> (Int?, Int?) {
-            let parts = text(key)?.split(separator: "/").map { Int($0.trimmingCharacters(in: .whitespaces)) }
+        func positive(_ text: some StringProtocol) -> Int? {
+            Int(text.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
+        }
 
-            return (parts?.first ?? nil, parts?.dropFirst().first ?? nil)
+        func position(_ key: String) -> (Int?, Int?) {
+            let parts = text(key)?.split(separator: "/", omittingEmptySubsequences: false)
+
+            return (parts?.first.flatMap(positive), parts?.dropFirst().first.flatMap(positive))
         }
 
         let track = position("TRACKNUMBER")
@@ -57,9 +62,9 @@ public struct AudioTags: Equatable, Sendable {
         album = text("ALBUM")
         albumArtist = text("ALBUMARTIST")
         trackNumber = track.0
-        trackTotal = track.1 ?? text("TRACKTOTAL").flatMap(Int.init)
+        trackTotal = track.1 ?? (text("TRACKTOTAL") ?? text("TOTALTRACKS")).flatMap(positive)
         discNumber = disc.0
-        discTotal = disc.1 ?? text("DISCTOTAL").flatMap(Int.init)
+        discTotal = disc.1 ?? (text("DISCTOTAL") ?? text("TOTALDISCS")).flatMap(positive)
         releaseDate = text("DATE")
         genre = text("GENRE")
         composer = text("COMPOSER")
@@ -74,16 +79,34 @@ public struct AudioTags: Equatable, Sendable {
         self.cover = cover
     }
 
-    // MARK: - Computed Properties
-    /// TagLib's property map for writing: the value of each tag craete manages, or `nil` to remove it.
-    var properties: [String: String?] {
-        [
+    // MARK: - Helpers
+    /// TagLib's property map for writing: the value of each tag craete manages, or `nil` to remove it. Vorbis
+    /// comments keep totals in their own fields; other formats keep them with the number, as `3/12`, or `0/12` when
+    /// there's no number. The other spellings of the totals are removed so they can't contradict the new ones.
+    func properties(separateTotals: Bool) -> [String: String?] {
+        let positions: [String: String?] = if separateTotals {
+            [
+                "TRACKNUMBER": Self.count(trackNumber).map(String.init),
+                "TRACKTOTAL": Self.count(trackTotal).map(String.init),
+                "DISCNUMBER": Self.count(discNumber).map(String.init),
+                "DISCTOTAL": Self.count(discTotal).map(String.init)
+            ]
+        } else {
+            [
+                "TRACKNUMBER": Self.position(trackNumber, of: trackTotal),
+                "TRACKTOTAL": nil,
+                "DISCNUMBER": Self.position(discNumber, of: discTotal),
+                "DISCTOTAL": nil
+            ]
+        }
+
+        return [
             "TITLE": title,
             "ARTIST": artist,
             "ALBUM": album,
             "ALBUMARTIST": albumArtist,
-            "TRACKNUMBER": Self.position(trackNumber, of: trackTotal),
-            "DISCNUMBER": Self.position(discNumber, of: discTotal),
+            "TOTALTRACKS": nil,
+            "TOTALDISCS": nil,
             "DATE": releaseDate,
             "GENRE": genre,
             "COMPOSER": composer,
@@ -96,13 +119,21 @@ public struct AudioTags: Equatable, Sendable {
             "LYRICS": lyrics,
             "COMPILATION": isCompilation ? "1" : nil
         ]
+        .merging(positions) { $1 }
         .mapValues { value in value.flatMap { $0.isEmpty ? nil : $0 } }
     }
 
-    // MARK: - Helpers
     private static func position(_ number: Int?, of total: Int?) -> String? {
-        guard let number, number > 0 else { return nil }
+        switch (count(number), count(total)) {
+        case (let number?, let total?): "\(number)/\(total)"
+        case (let number?, nil): String(number)
+        case (nil, let total?): "0/\(total)"
+        case (nil, nil): nil
+        }
+    }
 
-        return total.map { "\(number)/\($0)" } ?? String(number)
+    /// A track or disc number or total, which 0 or less means is missing.
+    private static func count(_ value: Int?) -> Int? {
+        value.flatMap { $0 > 0 ? $0 : nil }
     }
 }

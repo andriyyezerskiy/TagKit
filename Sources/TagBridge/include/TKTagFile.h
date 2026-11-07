@@ -14,6 +14,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface TKTagFile : NSObject
 
+/// The lower-case extensions of the formats TagLib can tag, such as `mp3`, `flac` and `m4a`.
+@property (class, readonly) NSSet<NSString *> *supportedExtensions;
+
 /// Every property in the file, each with one or more values. Returns nil when TagLib can't read the file.
 + (nullable NSDictionary<NSString *, NSArray<NSString *> *> *)propertiesOfFileAtPath:(NSString *)path error:(NSError **)error
     NS_SWIFT_NAME(properties(ofFileAtPath:));
@@ -22,8 +25,14 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable NSData *)coverOfFileAtPath:(NSString *)path
     NS_SWIFT_NAME(cover(ofFileAtPath:));
 
-/// Sets the given properties, removes the given keys, and, when `replacesCover` is set, replaces every picture
-/// with `cover` (or removes them all when it's nil). Other properties are left as they were.
+/// Whether the file keeps track and disc totals in their own fields, as Vorbis comments in FLAC and Ogg files do,
+/// rather than with the number, as `3/12`.
++ (BOOL)keepsTotalsSeparatelyInFileAtPath:(NSString *)path
+    NS_SWIFT_NAME(keepsTotalsSeparately(inFileAtPath:));
+
+/// Sets the given properties, removes the given keys, and, when `replacesCover` is set, replaces the cover that
+/// `coverOfFileAtPath:` reads with `cover` (or removes it when it's nil). Other properties and pictures are left
+/// as they were.
 + (BOOL)writeProperties:(NSDictionary<NSString *, NSArray<NSString *> *> *)properties
          removingKeys:(NSArray<NSString *> *)removedKeys
                 cover:(nullable NSData *)cover

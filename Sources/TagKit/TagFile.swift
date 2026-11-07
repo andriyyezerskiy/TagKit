@@ -12,7 +12,16 @@ import TagBridge
 /// that iCloud Drive or another app might also be using.
 public enum TagFile {
 
+    // MARK: - Properties
+    /// The extensions of the formats TagLib can tag. Formats such as CAF, AU and Wave64 play but can't hold tags.
+    private static let supportedExtensions: Set<String> = TKTagFile.supportedExtensions
+
     // MARK: - Actions
+    /// Whether tags can be written into a file of this kind, judged by its extension without opening it.
+    public static func canWrite(_ url: URL) -> Bool {
+        supportedExtensions.contains(url.pathExtension.lowercased())
+    }
+
     public static func read(_ url: URL) throws -> AudioTags {
         let properties = try TKTagFile.properties(ofFileAtPath: url.path(percentEncoded: false))
 
@@ -20,9 +29,11 @@ public enum TagFile {
     }
 
     /// Writes every tag craete manages, removing the ones that are `nil`. Tags it doesn't manage are left alone.
-    /// The cover is only replaced when `writesCover` is set, as rewriting a large picture is slow.
+    /// The cover is only replaced when `writesCover` is set, as rewriting a large picture is slow, and the file's
+    /// other pictures, such as a back cover, are kept.
     public static func write(_ tags: AudioTags, to url: URL, writesCover: Bool = false) throws {
-        let values = tags.properties
+        let path = url.path(percentEncoded: false)
+        let values = tags.properties(separateTotals: TKTagFile.keepsTotalsSeparately(inFileAtPath: path))
 
         try TKTagFile.writeProperties(
             values.compactMapValues { $0.map { [$0] } },
@@ -30,7 +41,7 @@ public enum TagFile {
             cover: tags.cover,
             coverMIMEType: tags.cover.map(mimeType),
             replacesCover: writesCover,
-            toFileAtPath: url.path(percentEncoded: false)
+            toFileAtPath: path
         )
     }
 
