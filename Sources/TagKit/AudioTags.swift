@@ -8,7 +8,7 @@
 import Foundation
 
 /// The tags craete reads and writes, in any format TagLib supports. `nil` means the file doesn't have that tag,
-/// and writing `nil` removes it.
+/// and writing `nil` removes it. A tag with several values, such as two artists, is read as its first.
 public struct AudioTags: Equatable, Sendable {
 
     // MARK: - Properties
@@ -33,6 +33,13 @@ public struct AudioTags: Equatable, Sendable {
     public var lyrics: String?
     public var isCompilation: Bool = false
     public var cover: Data?
+
+    /// The keys written together because they spell one position: a number and its total, in either place a file
+    /// may keep it.
+    private static let positionKeys: [Set<String>] = [
+        ["TRACKNUMBER", "TRACKTOTAL", "TOTALTRACKS"],
+        ["DISCNUMBER", "DISCTOTAL", "TOTALDISCS"]
+    ]
 
     // MARK: - Init
     public init() {}
@@ -121,6 +128,20 @@ public struct AudioTags: Equatable, Sendable {
         ]
         .merging(positions) { $1 }
         .mapValues { value in value.flatMap { $0.isEmpty ? nil : $0 } }
+    }
+
+    /// The part of `properties(separateTotals:)` that differs from `existing`, the file's tags as read before they
+    /// were edited. A tag that's the same is left out, so the file keeps every value it has for it, such as a second
+    /// artist, where `existing` only holds the first. A position is written whole when its number or total changes,
+    /// so the total's other spellings are still removed.
+    func properties(separateTotals: Bool, changedFrom existing: AudioTags) -> [String: String?] {
+        let values = properties(separateTotals: separateTotals)
+        let existingValues = existing.properties(separateTotals: separateTotals)
+        let changedKeys = Set(values.keys.filter { values[$0] != existingValues[$0] })
+
+        return values.filter { key, _ in
+            !changedKeys.isDisjoint(with: Self.positionKeys.first { $0.contains(key) } ?? [key])
+        }
     }
 
     private static func position(_ number: Int?, of total: Int?) -> String? {
